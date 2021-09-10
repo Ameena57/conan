@@ -9,6 +9,7 @@
     #   -LIBPATH, -D, -I, -ZI and so on.
 
 """
+import os
 
 from conans.client.tools.apple import to_apple_arch
 from conans.client.tools.oss import cpu_count
@@ -250,7 +251,7 @@ def format_libraries(libraries, settings):
                 library += ".lib"
             result.append(library)
         else:
-            result.append("-l%s" % library)
+            result.append(('"%s"' if os.path.isabs(library) else '-l%s') % library)
     return result
 
 

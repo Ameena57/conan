@@ -1,3 +1,4 @@
+import os
 from conans.model import Generator
 
 
@@ -17,7 +18,7 @@ class DepsCppQmake(object):
         self.res_paths = multiline(cpp_info.res_paths)
         self.build_paths = multiline(cpp_info.build_paths)
 
-        self.libs = " ".join('-l%s' % lib for lib in cpp_info.libs)
+        self.libs = " ".join(('"%s"' if os.path.isabs(lib) else '-l%s') % lib for lib in cpp_info.libs)
         self.system_libs = " ".join('-l%s' % lib for lib in cpp_info.system_libs)
         self.frameworks = " ".join('-framework %s' % framework for framework in cpp_info.frameworks)
         self.framework_paths = " ".join('-F%s' % framework_path for framework_path in
