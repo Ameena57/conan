@@ -1,3 +1,5 @@
+import os
+
 from conan.api.conan_api import ConanAPI
 from conan.api.model import ListPattern, MultiPackagesList
 from conan.api.output import ConanOutput
