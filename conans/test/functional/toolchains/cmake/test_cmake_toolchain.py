@@ -1446,6 +1446,57 @@ def test_cmaketoolchain_and_pkg_config_path():
     assert "Found dep, version 1.0" in client.out
 
 
+@pytest.mark.tool("cmake")
+def test_check_c_source_compiles():
+    """
+    https://github.com/conan-io/conan/issues/12012
+    """
+    client = TestClient()
+    client.run("new cmake_lib -d name=dep -d version=1.0")
+    client.run("create . -tf=")
+
+    consumer = textwrap.dedent("""
+        from conan import ConanFile
+        from conan.tools.cmake import cmake_layout, CMakeDeps
+        class PkgConan(ConanFile):
+            settings = "os", "arch", "compiler", "build_type"
+            requires = "dep/1.0"
+            generators = "CMakeToolchain"
+
+            def generate(self):
+                tc = CMakeDeps(self)
+                tc.cmake_required_includes = ["dep"]
+                # tc.cmake_required_libs = ["dep"]
+                tc.generate()
+        """)
+
+    # COMMENT set(MYLIB ... ) and UNCOMMENT get_target_property( ) for test to pass
+    cmakelist = textwrap.dedent("""\
+        cmake_minimum_required(VERSION 3.15)
+        project(Hello LANGUAGES CXX)
+
+        find_package(dep CONFIG REQUIRED)
+        include(CheckCXXSourceCompiles)
+
+        message(STATUS "CMAKE_REQUIRED_INCLUDES= ${CMAKE_REQUIRED_INCLUDES}")
+        # get_target_property(MYLIB CONAN_LIB::dep_dep_RELEASE IMPORTED_LOCATION_RELEASE)
+        # set(MYLIB ${dep_LIBRARIES_TARGETS})
+        # message(STATUS "LIBS DEPS ${dep_LIBRARIES_TARGETS}")
+        # list(PREPEND CMAKE_REQUIRED_LIBRARIES ${MYLIB})
+
+        check_cxx_source_compiles("#include <dep.h>
+                                  int main(void) { return 0; }" IT_COMPILES)
+        """)
+
+    client.save({"conanfile.py": consumer,
+                 "CMakeLists.txt": cmakelist}, clean_first=True)
+    client.run("install .")
+
+    with client.chdir("build"):
+        client.run_command("cmake .. -DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake ")
+        assert "Performing Test IT_COMPILES - Success" in client.out
+
+
 def test_cmaketoolchain_conf_from_tool_require():
     # https://github.com/conan-io/conan/issues/13914
     c = TestClient()
