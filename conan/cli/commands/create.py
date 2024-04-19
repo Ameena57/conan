@@ -10,6 +10,9 @@ from conan.cli.printers import print_profiles
 from conan.cli.printers.graph import print_graph_packages, print_graph_basic
 from conan.errors import ConanException
 from conans.client.graph.graph import BINARY_BUILD
+from conan.internal.runner.docker import DockerRunner
+from conan.internal.runner.ssh import SSHRunner
+from conan.internal.runner.wsl import WSLRunner
 from conans.util.files import mkdir
 
 
@@ -33,6 +36,7 @@ def create(conan_api, parser, *args):
     parser.add_argument("-bt", "--build-test", action="append",
                         help="Same as '--build' but only for the test_package requires. By default"
                              " if not specified it will take the '--build' value if specified")
+    raw_args = args[0]
     args = parser.parse_args(*args)
 
     if args.test_missing and args.test_folder == "":
@@ -62,6 +66,13 @@ def create(conan_api, parser, *args):
     lockfile = conan_api.lockfile.update_lockfile_export(lockfile, conanfile, ref, is_build)
 
     print_profiles(profile_host, profile_build)
+    if profile_host.runner and not os.environ.get("CONAN_RUNNER_ENVIRONMENT"):
+        return {
+            'docker': DockerRunner,
+            'ssh': SSHRunner,
+            'wsl': WSLRunner,
+        }[profile_host.runner.get('type')](conan_api, 'create', profile_host, profile_build, args, raw_args).run()
+
     if args.build is not None and args.build_test is None:
         args.build_test = args.build
 
