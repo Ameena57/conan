@@ -309,3 +309,81 @@ def test_meson_using_prefix_path_in_application():
     client.run("build .")
     assert "unrecognized character escape sequence" not in str(client.out)  # if Visual
     assert "unknown escape sequence" not in str(client.out)  # if mingw
+
+
+@pytest.mark.tool("meson")
+@pytest.mark.skipif(platform.system() != "Linux", reason="Requires --sysroot on Linux")
+@pytest.mark.skipif(sys.version_info.minor < 8, reason="Latest Meson versions needs Python >= 3.8")
+def test_meson_sysroot_app():
+    """Testing when users pass tools.build:sysroot on the profile with Meson
+
+    The generated conan_meson_cross.ini needs to contain both sys_root property to fill the
+    PKG_CONFIG_PATH and the compiler flags with --sysroot.
+
+    When cross-building, Meson needs both compiler_executables in the config, otherwise it will fail
+    when running setup.
+    """
+    sysroot = "/my/new/sysroot/path"
+    client = TestClient()
+    profile = textwrap.dedent("""
+        [settings]
+        os=Linux
+        arch=armv8
+        compiler=gcc
+        compiler.version=8
+        compiler.libcxx=libstdc++11
+        build_type=Release
+
+        [conf]
+        tools.build:sysroot=%s
+        tools.build:compiler_executables={"c": "gcc", "cpp": "g++"}
+        tools.build:verbosity=verbose
+        tools.compilation:verbosity=verbose
+    """ % sysroot)
+    conanfile = textwrap.dedent(f"""
+            from conan import ConanFile
+            from conan.tools.meson import Meson
+            from conan.tools.files import copy
+            from conan.tools.layout import basic_layout
+            import os
+            class Pkg(ConanFile):
+                settings = "os", "compiler", "build_type", "arch"
+                exports_sources = "meson.build", "src/*"
+                generators = "MesonToolchain"
+                def build(self):
+                    meson = Meson(self)
+                    meson.configure()
+                    meson.build()
+                def layout(self):
+                    self.folders.generators = '{client.cache_folder}/build/gen_folder'
+                    self.folders.build = "{client.cache_folder}/build"
+        """)
+    meson_build = textwrap.dedent("""
+            project('foobar', 'cpp')
+            executable('foobar', 'src/main.cpp')
+        """)
+    main_cpp = textwrap.dedent("int main() { return 0; }")
+
+    client.save({"conanfile.py": conanfile,
+                 "meson.build": meson_build,
+                 "profile": profile,
+                 "src/main.cpp": main_cpp,
+                 })
+
+    client.run("create . --name=foobar --version=0.1.0 -pr:h=profile -pr:b=default")
+
+    # Check the meson configuration file
+    conan_meson = client.load(os.path.join(client.cache_folder, "build", "gen_folder", "conan_meson_cross.ini"))
+    assert f"sys_root = '{sysroot}'\n" in conan_meson
+    assert re.search(r"c_args =.+--sysroot={}.+".format(sysroot), conan_meson)
+    assert re.search(r"c_link_args =.+--sysroot={}.+".format(sysroot), conan_meson)
+    assert re.search(r"cpp_args =.+--sysroot={}.+".format(sysroot), conan_meson)
+    assert re.search(r"cpp_link_args =.+--sysroot={}.+".format(sysroot), conan_meson)
+
+    # Check the meson-log.txt
+    meson_log = client.load(os.path.join(client.cache_folder, "build", "meson-logs", "meson-log.txt"))
+    assert re.search(r"Detecting linker via:.+--sysroot={}".format(sysroot), meson_log)
+
+    # Check compiler calls based on Conan output
+    assert re.search(r"\[1/2\].+--sysroot=/my/new/sysroot/path", client.out)
+    assert re.search(r"\[2/2\].+--sysroot=/my/new/sysroot/path", client.out)
